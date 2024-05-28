@@ -27,7 +27,7 @@ app.get('/', (req, res) => {
 })
 
 app.get('/mylist', (req, res) => {
-    // route show all books
+    // route show all todos
     todolist.find().toArray()
         .then(response => {
             // console.log(response)
@@ -38,7 +38,7 @@ app.get('/mylist', (req, res) => {
 })
 
 app.get('/mylist/:id', (req, res) => {
-    // route show a specific book
+    // route show a specific todo from list
     const data = req.params
 
     const filter = {
@@ -55,7 +55,7 @@ app.get('/mylist/:id', (req, res) => {
 })
 
 app.post('/admin/savetodo', (req, res) => {
-    // Route adds a new book
+    // Route add a new todo to list
     const data = req.body
     if (!data.Title)
         return res.status(400).send({message:"No title found."})
