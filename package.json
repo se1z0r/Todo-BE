@@ -1,5 +1,5 @@
 {
-  "name": "bookshop",
+  "name": "Todo",
   "version": "1.0.0",
   "description": "Backend for todo list server",
   "main": "app.js",
