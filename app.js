@@ -2,10 +2,11 @@ import express from 'express'
 import cors from 'cors'
 import { PORT, MongoDBURL } from './config.js'
 import { MongoClient, ObjectId, ServerApiVersion } from "mongodb"
+import { addDays, differenceInDays, format, subDays } from 'date-fns'
 const app = express()
 
-app.use(cors())
 app.use(express.json())
+app.use(cors())
 
 const client = new MongoClient(MongoDBURL, {
     serverApi: {
@@ -15,94 +16,159 @@ const client = new MongoClient(MongoDBURL, {
     }
 });
 
-const todoDB = client.db("myTodolist")
-const todolist = todoDB.collection("TodoList")  
+const tasksDB = client.db("mytasks")
+const mytasks = tasksDB.collection("ToDosCollection")
 
 app.listen(PORT, () => {
     console.log(`Server started on port ${PORT}`)
 })
 
-app.get('/', (req, res) => {
-    return res.status(200).send({message:"Welcome to Your Todo!"})
-})
-
-app.get('/mylist', (req, res) => {
-    // route show all todos
-    todolist.find().toArray()
-        .then(response => {
-            // console.log(response)
-            res.status(200).send(response)
-        })
-        .catch(err => console.log(err))
-    // return res.status(200).send("<a href='/'> Home</a>")
-})
-
-app.get('/mylist/:id', (req, res) => {
-    // route show a specific todo from list
-    const data = req.params
-
-    const filter = {
-        "_id": new ObjectId(data.id)
-    }
-
-    todolist.findOne(filter)
-        .then(response => {
-            // console.log(response)
-            res.status(200).send(response)
-        })
-        .catch(err => console.log(err))
-    // return res.status(200).send(`<a href='/'> Book: ${data.id}</a>`)
-})
-
-app.post('/admin/savetodo', (req, res) => {
-    // Route add a new todo to list
+// Add a task (max length 160 characters)
+// Accepts task, dueDate, private, owner
+app.post('/add', (req, res) => {
+    // get header data
     const data = req.body
-    if (!data.Title)
-        return res.status(400).send({message:"No title found."})
-    if (!data.Todo)
-        return res.status(400).send({message:"No todo found."})
-    if (!data.TodoDate)
-        return res.status(400).send({message:"No todo date found."})
 
-    todolist.insertOne(data)
-    .then(response=>{
-        return res.status(201).send(JSON.stringify(response))
-    })
-    .catch(err=>console.log(err))
+    if (!data.task)
+        return res.status(200).send({ message: "No task found." })
+    // validate task length 160 char
+    if (data.task.length > 160)
+        return res.status(200).send({ message: "Task has too many characters." })
+    if (!data.owner)
+        return res.status(200).send({ message: "No owner found." })
+    // set public, if private not set
+    if (!data.private)
+        data.private = false
+    // validate due date, if empty set next day
+    if (!data.dueDate)
+        data.dueDate = format(addDays(Date.now(), 1), "yyyy-MM-dd")
+    // validate date format
+    if (differenceInDays(new Date(data.dueDate), Date.now()) < 0)
+        return res.status(200).send({ message: "Invalid date format, use: YYYY-MM-DD" })
+    else
+        data.dueDate = format(new Date(data.dueDate), "yyyy-MM-dd")
+
+    mytasks.insertOne(data)
+        .then(dbRes => {
+            let msg = {}
+            if (!dbRes.insertedId)
+                msg.message = "Oops! Something went wrong."
+            else
+                msg.message = "Added successfully."
+            return res.status(201).send(msg)
+        })
+        .catch(err => {
+            console.log(err)
+            return res.status(500).send({ message: "Oops! Something went wrong." })
+        })
 })
 
-app.delete('/admin/remove/:id', (req, res) => {
+// Delete a task
+app.delete('/remove/:id', (req, res) => {
+    // get param id
     const data = req.params
 
     const filter = {
         "_id": new ObjectId(data.id)
     }
 
-    todolist.deleteOne(filter)
-        .then(response => {
-            // console.log(response)
-            return res.status(200).send(response)
+    mytasks.deleteOne(filter)
+        .then(dbRes => {
+            let msg = {}
+            if (!dbRes.deletedCount)
+                msg.message = "Oops! Something went wrong."
+            else
+                msg.message = "Deleted sucessfully."
+            return res.status(200).send(msg)
         })
-        .catch(err => console.log(err))
+        .catch(err => {
+            console.log(err)
+            return res.status(500).send({ message: "Oops! Something went wrong." })
+        })
 })
 
-app.put('/admin/update/:id/', (req, res) => {
-    const data = req.params
+// update task
+app.put('/update/:id', (req, res) => {
     const docData = req.body
-    
+
+    // Hanlde no fields detected
+    if (!docData)
+        return res.status(500).send({ message: "Oops! Something went wrong." })
+
     const filter = {
-        "_id": new ObjectId(data.id)
+        "_id": new ObjectId(req.params.id)
     }
 
     const updDoc = {
         $set: {
-           ...docData //docData.price, docData.cover
+            ...docData
         }
     }
 
-    todolist.updateOne(filter, updDoc)
-    .then(response=>{
-        res.status(200).send(response)
-    })
-    .catch(err=>console.log(err))
+    mytasks.updateOne(filter, updDoc)
+        .then(dbRes => {
+            let msg = {}
+            console.log(dbRes)
+            if (!dbRes.matchedCount || !dbRes.modifiedCount)
+                msg.message = "Oops! Something went wrong."
+            else
+                msg.message = "Update sucessful."
+            return res.status(200).send(msg)
+        })
+        .catch(err => {
+            console.log(err)
+            return res.status(500).send({ message: "Oops! Something went wrong." })
+        })
+})
+
+// get all tasks
+app.get('/tasks', (req, res) => {
+    mytasks.find().toArray()
+        .then(dbRes => {
+            let msg = {}
+            if (!dbRes.length)
+                msg.message = "No tasks were found."
+            else
+                msg = dbRes
+            return res.status(200).send(msg)
+        })
+        .catch(err => {
+            console.log(err)
+            return res.status(500).send({ message: "Oops! Something went wrong." })
+        })
+})
+
+// get a task by id
+app.get('/task/:id', (req, res) => {
+    const filter = {
+        "_id": new ObjectId(req.params.id)
+    }
+    mytasks.findOne(filter)
+        .then(dbRes => {
+            let msg = {}
+            console.log(dbRes, !dbRes)
+            if (!dbRes)
+                msg.message = "No task was found."
+            else
+                msg = dbRes
+            return res.status(200).send(msg)
+        })
+        .catch(err => {
+            console.log(err)
+            return res.status(500).send({ message: "Oops! Something went wrong." })
+        })
+})
+
+// Error handling for bad URLs
+app.get('*', (req, res) => {
+    return res.status(500).send({ message: "Oops! Something went wrong." })
+})
+app.post('*', (req, res) => {
+    return res.status(500).send({ message: "Oops! Something went wrong." })
+})
+app.delete('*', (req, res) => {
+    return res.status(500).send({ message: "Oops! Something went wrong." })
+})
+app.put('*', (req, res) => {
+    return res.status(500).send({ message: "Oops! Something went wrong." })
 })
